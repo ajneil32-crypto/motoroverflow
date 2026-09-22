@@ -1,0 +1,194 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<CEDResources App="Spike2" AppVer="1015">
+	<Sample S2Ver="1015" ARange="5" LastSym="$(Here)Motor_Overflow_Config.s2cx" Last="C:\Users\NIMBL\Desktop\Motor Overflow\Pilot\Motor_Overflow_Config.s2cx">
+		<SampCtl t="126" b="0" l="-2" r="2" />
+		<SeqCtl t="126" b="0" l="353" r="2" />
+		<SampSta t="90" b="0" l="-2" r="2" />
+		<!--Sampling configuration saved to C:\Users\NIMBL\Desktop\Motor Overflow\Pilot\Motor_Overflow_Config.s2cx on September 2, 2026 9:03:53 AM-->
+		<Chans IdealWMRate="20000">
+			<Chan id="0" Type="1" Title="FDI_L" Rate="2000" ActRate="2000" Comment="Left hand EMG" Units="mV" Scale="0.9999989748001111" Divide="2" />
+			<Chan id="1" Type="1" Title="FDI_R" Port="2" Rate="2000" ActRate="2000" Comment="Right hand EMG" Units="mV" Scale="0.9999989748001111" Divide="2" />
+			<Chan id="31" Type="5" Title="Trig" ActRate="100" Comment="BBTK digital marker, rear Digital Input, strobe on pin 23" />
+			<Chan id="30" Type="5" Title="Keyboard" ActRate="100" Comment="No comment" Units=" volt" Divide="0" />
+		</Chans>
+		<Resol uspt="2" tpa="125" recalc="0" Assume1401="10" OptMeth="2" OptUSFrom="2" OptUSTo="50" CompFlgs="14" />
+		<Mode For="60" EveryUn="1">
+			<Trigs id="0" Chan="-4" Code="-1" Post="1" Chans="-1" />
+			<Trigs id="1" Chan="-4" Code="-1" Post="1" Chans="-1" />
+			<Trigs id="2" Chan="-4" Code="-1" Post="1" Chans="-1" />
+			<Trigs id="3" Chan="-4" Code="-1" Post="1" Chans="-1" />
+		</Mode>
+		<Seq OutType="2" SeqText="" DigMask="131" DacUnits="V">
+			<Pulses States="27">
+				<State id="4">
+					<PulseList id="0">
+						<Pulse id="0" Type="0" Before="0.1" />
+					</PulseList>
+					<PulseList id="1">
+						<Pulse id="0" Type="0" Before="0.1" />
+					</PulseList>
+					<PulseList id="2">
+						<Pulse id="0" Type="0" Before="0.1" />
+					</PulseList>
+					<PulseList id="3">
+						<Pulse id="0" Type="0" Before="0.1" />
+					</PulseList>
+					<PulseList id="4">
+						<Pulse id="0" Type="0" Before="0.1" />
+					</PulseList>
+					<PulseList id="5">
+						<Pulse id="0" Type="0" Before="0.1" />
+					</PulseList>
+					<PulseList id="6">
+						<Pulse id="0" Type="0" Before="0.1" />
+					</PulseList>
+					<PulseList id="7">
+						<Pulse id="0" Type="0" Before="0.1" />
+					</PulseList>
+					<PulseList id="8">
+						<Pulse id="0" Type="0" Before="0.1" />
+						<Pulse id="1" Type="1" Before="0.010000000474974513" Length="0.0010000000474974513" Dig="128" />
+					</PulseList>
+					<PulseList id="9">
+						<Pulse id="0" Type="0" Name="D" Before="0" Frame="1.0000000474974513" />
+					</PulseList>
+				</State>
+				<State id="16">
+					<PulseList id="0">
+						<Pulse id="0" Type="0" Before="0.1" />
+					</PulseList>
+					<PulseList id="1">
+						<Pulse id="0" Type="0" Before="0.1" />
+					</PulseList>
+					<PulseList id="2">
+						<Pulse id="0" Type="0" Before="0.1" />
+					</PulseList>
+					<PulseList id="3">
+						<Pulse id="0" Type="0" Before="0.1" />
+					</PulseList>
+					<PulseList id="4">
+						<Pulse id="0" Type="0" Before="0.1" />
+					</PulseList>
+					<PulseList id="5">
+						<Pulse id="0" Type="0" Before="0.1" />
+					</PulseList>
+					<PulseList id="6">
+						<Pulse id="0" Type="0" Before="0.1" />
+					</PulseList>
+					<PulseList id="7">
+						<Pulse id="0" Type="0" Before="0.1" />
+					</PulseList>
+					<PulseList id="8">
+						<Pulse id="0" Type="0" Before="0.1" />
+						<Pulse id="1" Type="1" Before="0.010000000474974513" Length="0.0010000000474974513" Dig="1" />
+					</PulseList>
+					<PulseList id="9">
+						<Pulse id="0" Type="0" Name="P" Before="0" Frame="1.0000000474974513" />
+					</PulseList>
+				</State>
+				<State id="20">
+					<PulseList id="0">
+						<Pulse id="0" Type="0" Before="0.1" />
+					</PulseList>
+					<PulseList id="1">
+						<Pulse id="0" Type="0" Before="0.1" />
+					</PulseList>
+					<PulseList id="2">
+						<Pulse id="0" Type="0" Before="0.1" />
+					</PulseList>
+					<PulseList id="3">
+						<Pulse id="0" Type="0" Before="0.1" />
+					</PulseList>
+					<PulseList id="4">
+						<Pulse id="0" Type="0" Before="0.1" />
+					</PulseList>
+					<PulseList id="5">
+						<Pulse id="0" Type="0" Before="0.1" />
+					</PulseList>
+					<PulseList id="6">
+						<Pulse id="0" Type="0" Before="0.1" />
+					</PulseList>
+					<PulseList id="7">
+						<Pulse id="0" Type="0" Before="0.1" />
+					</PulseList>
+					<PulseList id="8">
+						<Pulse id="0" Type="0" Before="0.1" />
+						<Pulse id="1" Type="1" Before="0.010000000474974513" Length="0.0010000000474974513" Dig="2" />
+					</PulseList>
+					<PulseList id="9">
+						<Pulse id="0" Type="0" Name="T" Before="0" Frame="1.0000000474974513" />
+					</PulseList>
+				</State>
+			</Pulses>
+		</Seq>
+		<PortLabels DACCount="0" DIGCount="0" />
+		<Waves>
+			<Wave id="0" Type="2" Chans="1" Used="1" Label="target" Rate="50" PtsPer="500" Scale="0.3" FTo="1" Key="116" Wave="AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA__AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA__AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA__AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA__AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA__AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA__AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA__AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA__AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA__AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA__AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA__AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA__AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA__AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA__AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA__AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA__AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA__AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA__AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==" />
+		</Waves>
+		<Auto AutoSave="1" />
+		<Script />
+		<CondPorts Count="34">
+			<c id="0" Scale="0.00015258773419191148" Units="mV" Gain="1000" Mode="8" Source="5" LFilt="1000" HFilt="10" />
+			<c id="1" Units="mV" Gain="1000" Mode="5" Source="5" LFilt="1000" HFilt="10" />
+			<c id="2" Scale="0.00015258773419191148" Units="mV" Gain="1000" Mode="4" Source="5" LFilt="1000" HFilt="10" />
+			<c id="3" Units="mV" Gain="1000" Mode="5" Source="5" LFilt="1000" HFilt="10" />
+			<c id="4" Scale="0.00978550175204873" Offset="2.677980899810791" Units="mV" Gain="100" Source="2" LFilt="500" />
+			<c id="5" Source="2" />
+			<c id="6" Scale="0.0005086262899567373" Units="mV" Gain="300" Mode="1" Source="5" LFilt="1000" HFilt="10" />
+			<c id="7" Scale="-0.0012857162801083175" Units="mV" Gain="300" Mode="1" Source="5" LFilt="1000" HFilt="10" />
+			<c id="8" Source="2" />
+			<c id="9" Source="2" />
+			<c id="10" Source="2" />
+			<c id="11" Source="2" />
+			<c id="12" Source="2" />
+			<c id="13" Source="2" />
+			<c id="14" Source="2" />
+			<c id="15" Source="2" />
+			<c id="16" Source="2" />
+			<c id="17" Source="2" />
+			<c id="18" Source="2" />
+			<c id="19" Source="2" />
+			<c id="20" Source="2" />
+			<c id="21" Source="2" />
+			<c id="22" Source="2" />
+			<c id="23" Source="2" />
+			<c id="24" Source="2" />
+			<c id="25" Source="2" />
+			<c id="26" Source="2" />
+			<c id="27" Source="2" />
+			<c id="28" Source="2" />
+			<c id="29" Source="2" />
+			<c id="30" Source="2" />
+			<c id="31" Source="2" />
+			<c id="45" Scale="0.6103515625" />
+			<c id="60" Scale="0.6103515625" />
+		</CondPorts>
+		<ForceOP />
+		<Talkers />
+	</Sample>
+	<DocTime>
+		<View title="Motor_Overflow">
+			<WPlace flags="0" showc="1" minx="-1" miny="-1" maxx="-1" maxy="-1" t="32" b="618" l="32" r="1692" />
+			<Font hgt="-14" hthou="-117" wgt="400" paf="16" fnam="Times New Roman" />
+			<Chan Chan="30" DMode="9" DWidth="1" DBoth="1" DHLine="1" DSubMd="2" Ax="0" AdcAxMax="1" FreqAxMax="2" ChType="5" />
+			<Chan Chan="0" DMode="11" DWidth="1" AxMin="-5" AxMax="5" AdcAxMin="-5" AdcAxMax="5" FreqAxMax="1000" AxType="1" ChType="1" BackOv="0" />
+			<Chan Chan="1" DMode="11" DWidth="1" AxMin="-5" AxMax="5" AdcAxMin="-5" AdcAxMax="5" FreqAxMax="50" AxType="1" ChType="1" BackOv="0" />
+			<XInfo Right="15.999997590703053" XAxSmall="5" CRBack="0" VCLabMode="2" HCLabMode="1" VCCount="3">
+				<VCur id="0" LabMode="2" LabPos="0.2" Num="0" />
+				<VCur id="1" Pos="198.0312133045581" LabMode="2" LabPos="0.2" Num="1" />
+				<VCur id="2" Pos="199.79050896923442" LabMode="2" LabPos="0.2" Num="2" />
+			</XInfo>
+			<ChOrder Chans="3">
+				<c id="0" Chan="30" />
+				<c id="1" />
+				<c id="2" Chan="1" />
+			</ChOrder>
+			<CursVals XZero="0" YZero="0" />
+			<CursRegs t="506" b="701" l="869" r="1432" Mode="10" />
+			<OvDraw3d YProp="0.5" XScale="0.5" YScale="0.5" />
+		</View>
+	</DocTime>
+	<App>
+		<WPlace flags="2" showc="3" minx="-1" miny="-1" maxx="-1" maxy="-1" t="154" b="712" l="154" r="922" />
+	</App>
+</CEDResources>

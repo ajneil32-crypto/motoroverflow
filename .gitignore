@@ -1,0 +1,23 @@
+__pycache__/
+*.pyc
+
+# Participant data. These folders are the study's OUTPUT, written at runtime to
+# <Desktop>/motor_overflow/ — which, because this project lives on the Desktop,
+# resolves to the project folder itself. They are deliberately untracked: they
+# are collected data, not source, and should not end up in a shared repo.
+# Ignoring them does not affect the study — the app creates whatever folder it
+# needs via os.makedirs(exist_ok=True) and never reads anything back from git.
+mo_initialization/
+mo_calibration/
+mo_questionnaire/
+mo_session/
+mo_task/
+
+# Stimulus videos: large binaries supplied per lab machine, not source. The app
+# checks for these explicitly and reports a missing file on screen.
+ao_video_*.mp4
+
+# EMG recordings and cabling photos: large binaries, not source.
+EMG/
+*.mat
+PythonSpike2_Cables/
