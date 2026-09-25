@@ -1,27 +1,16 @@
 """Bench tool: sends digital markers to Spike2 through the BBTK without running
 the task. Run from a Command Prompt in this folder while Spike2 is sampling.
 
-    py trigger_test.py [--port COM12] [--mock] [--mode single|trial|session|hold|code] [--trials N] [--all] [--code N]
+    py trigger_test.py [--port COM12] [--mock] [--mode single|trial|session] [--trials N]
 
-hold     data line 1 held HIGH until Ctrl+C, then dropped; the strobe stays
-         HIGH so Spike2 records nothing. Put a multimeter on the 1401 end of
-         the cable: pin 21 vs pin 13 reads about 5 V while held, 0 V after.
-         With --all every data line (1401 pins 21, 8, 20, 7, 19, 6, 18) is
-         raised, so a
-         reading of 5 V on --all but 0 V without it means the cable is tapped
-         on the wrong pin. Pin 23 (strobe) reads about 5 V throughout.
-single   5 test markers (code 100), 2 s apart. Look for 5 markers on Trig.
-code     5 markers with the code given by --code (0-127), 1 s apart. For
-         finding out what the 1401 makes of each data line: --code 127 raises
-         all seven, --code 1, 2, 4, 8, 16, 32, 64 raise one line each. Spike2
-         must show the same number (in hex: 7F, 01, 02, 04, 08, 10, 20, 40).
-trial    N trials (default 3): a (1), +2200 ms b (2), +15000 ms c (3), then
+single   5 test markers, 2 s apart. Look for 5 markers on Trig.
+trial    N trials (default 3): a, +2200 ms b, +15000 ms c, then
          a 5 s gap.
 session  32 trials in 4 blocks of 8, 3 s between trials, 10 s between blocks
          (about 12 minutes). Save the Spike2 file and run mo_label_export.s2s
          on it: the report must show 32 triplets with positions assigned.
 
-Ctrl+C stops it and parks the lines idle. --mock uses the fake port and prints
+Ctrl+C stops it and puts the line up. --mock uses the fake port and prints
 every write at the end so the timing can be checked without hardware.
 """
 
@@ -34,7 +23,7 @@ import bbtk_trigger as bt
 
 
 def wait_ms(trig, ms, t0):
-    """Sleep in 1 ms steps, servicing the trigger so the line drops on time."""
+    """Sleep in 1 ms steps, servicing the trigger so the line goes back up on time."""
     end = t0 + ms / 1000.0
     while True:
         trig.service()
@@ -47,7 +36,7 @@ def wait_ms(trig, ms, t0):
 def send(trig, label, start, tag=""):
     t = trig.pulse(label)
     stamp = (time.perf_counter() - start) * 1000.0
-    what = f"{label} (code {bt.CODES[label]}){tag}"
+    what = f"{label}{tag}"
     if t is None:
         print(f"{stamp:10.1f} ms  {what}  FAILED: {trig.error}")
     else:
@@ -60,34 +49,6 @@ def run_single(trig, start):
         t = send(trig, "test", start, f" {i + 1}")
         if i < 4:
             wait_ms(trig, 2000, t)
-
-
-def run_code(trig, start, code):
-    for i in range(5):
-        t = trig.pulse("code", code)
-        stamp = (time.perf_counter() - start) * 1000.0
-        if t is None:
-            print(f"{stamp:10.1f} ms  code {code} (hex {code:02X})  FAILED: {trig.error}")
-        else:
-            print(f"{stamp:10.1f} ms  code {code} (hex {code:02X})  {i + 1}")
-        if i < 4:
-            wait_ms(trig, 1000, time.perf_counter())
-
-
-def run_hold(trig, all_lines):
-    what = "all 7 data lines (1401 pins 21, 8, 20, 7, 19, 6, 18)" if all_lines else "data line 1 (BBTK pin 2 -> 1401 pin 21)"
-    if not trig.hold(True, all_lines):
-        print(f"hold FAILED: {trig.error}")
-        return
-    print(f"{what} HIGH. Red LED(s) on the BBTK lit; meter on the 1401 end, pin 21 vs pin 13: about 5 V.")
-    print("Strobe (line 8 -> pin 23) stays HIGH, so Spike2 shows nothing. Ctrl+C drops the data lines.")
-    try:
-        while True:
-            time.sleep(0.5)
-    except KeyboardInterrupt:
-        pass
-    ok = trig.hold(False)
-    print("LOW." + ("" if ok else f" (drop FAILED: {trig.error})") + " Meter: expect 0 V on pin 21; LED 8 (strobe) stays lit.")
 
 
 def run_trials(trig, start, n_trials, gap_ms, block=None):
@@ -115,10 +76,8 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--port", default=bt.DEFAULT_PORT)
     ap.add_argument("--mock", action="store_true", help="no hardware; use the fake port")
-    ap.add_argument("--mode", choices=("single", "trial", "session", "hold", "code"), default="single")
+    ap.add_argument("--mode", choices=("single", "trial", "session"), default="single")
     ap.add_argument("--trials", type=int, default=3, help="trials for --mode trial")
-    ap.add_argument("--all", action="store_true", help="--mode hold: raise all 7 data lines, not just line 1")
-    ap.add_argument("--code", type=int, default=bt.CODE_MAX, help=f"--mode code: the code to send, 0-{bt.CODE_MAX} (default all seven lines)")
     args = ap.parse_args()
 
     if args.mock:
@@ -132,26 +91,19 @@ def main():
         print("ports seen:", trig.list_ports() or "none")
         return 1
 
-    if not 0 <= args.code <= bt.CODE_MAX:
-        print(f"--code must be 0-{bt.CODE_MAX}")
-        return 2
-    n_expected = {"single": 5, "trial": 3 * args.trials, "hold": 0, "code": 5,
+    n_expected = {"single": 5, "trial": 3 * args.trials,
                   "session": 3 * bt.TRIALS_PER_BLOCK * bt.BLOCKS_PER_SESSION}[args.mode]
     print(f"mode {args.mode}: {n_expected} markers. Ctrl+C to stop.")
     fake = trig._ser if trig.mock else None      # kept so the log survives close()
     start = time.perf_counter()
     try:
-        if args.mode == "hold":
-            run_hold(trig, args.all)
-        elif args.mode == "single":
+        if args.mode == "single":
             run_single(trig, start)
-        elif args.mode == "code":
-            run_code(trig, start, args.code)
         elif args.mode == "trial":
             run_trials(trig, start, args.trials, 5000)
         else:
             run_session(trig, start)
-        # let the last strobe rise before the port closes
+        # let the line go back up before the port closes
         wait_ms(trig, bt.PULSE_MIN_MS + 5, time.perf_counter())
     except KeyboardInterrupt:
         print("\nstopped")

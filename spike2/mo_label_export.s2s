@@ -1,5 +1,10 @@
-' mo_label_export.s2s  --  Motor Overflow: label trigger markers, export to .mat
-' Version 2.1 (Spike2 10.15) - digital marker codes, with a spacing fallback
+' mo_label_export.s2s  --  Motor Overflow: label trigger markers in the .smrx
+' Version 3.0 (Spike2 10.15) - straight DB25 cable: labels by spacing only
+' 3.0: the cable carries the strobe but not the data bits, so every marker
+'      reads the same byte (AA). The code-based decoder and the rewrite of
+'      Trig's codes are gone; trials are found by the 2.2 s / 15 s spacing.
+'      The .mat export is gone too (it is in git history, commit 674b2aa,
+'      func ExportMat%, if it is wanted back).
 '
 ' UNTESTED until the bench test in SETUP_INSTRUCTIONS.md Part D passes.
 '
@@ -7,35 +12,23 @@
 '   1. finds the channel titled "Trig": a Digital Marker channel fed by the
 '      BBTK through the 1401's rear Digital Input connector, or an Event
 '      channel fed by one BBTK line,
-'   2. reads every marker's time (and code, on a marker channel),
-'   3. groups them into a/b/c trials, exactly as bbtk_trigger.py does on the
-'      Python side, by one of two rules chosen automatically:
-'        codes   - if any marker carries code 1, 2 or 3: three consecutive
-'                  markers coded 1, 2, 3 make a trial. Other codes (test
-'                  pulses = 100, a code 0 latched when the port opens) are
-'                  ignored. Spacing is only a cross-check.
-'        spacing - otherwise (an Event channel, or every marker reading the
-'                  same byte such as AA because the cable delivers the strobe
-'                  but not the data bits): a marker followed by one about
-'                  2.2 s later and another about 15 s after that makes a
-'                  trial. Test pulses fall out as unmatched.
+'   2. reads every marker's time (the codes all read the same and are ignored),
+'   3. groups them into a/b/c trials, exactly as bbtk_trigger.decode does on
+'      the Python side: a marker followed by one about 2.2 s later and another
+'      about 15 s after that makes a trial. Test pulses fall out as unmatched.
 '   4. writes a TextMark channel "Labels" with one item per marker
 '      ("1a", "1b", "1c" ... "4c"; codes = [1|2|3, block, trial, 0]),
-'   5. on a marker channel, rewrites the codes of every labelled marker to
-'      [1|2|3, block, trial, 0] so Trig itself reads 01 02 03 instead of AA,
-'   6. exports {basename}.mat with FDI_L, FDI_R, Trig and Labels,
-'   7. writes {basename}_labels_report.txt beside the data file.
+'   5. writes {basename}_labels_report.txt beside the data file.
 ' Files whose name ends "_partial" are skipped (crashed sessions).
 '
 ' Lines marked VERIFY use script functions or arguments not confirmed
 ' against the Spike2 10 documentation. Check them on the lab PC first.
 
 ' ---- constants: MUST MATCH bbtk_trigger.py ---------------------------------
-const CODE_A% := 1, CODE_B% := 2, CODE_C% := 3;   ' CODES in bbtk_trigger.py
 const AB_NOMINAL_MS := 2200;      ' REST_MS + BEGIN_MS in motor_overflow9.py
 const BC_NOMINAL_MS := 15000;     ' TRIAL_SECONDS * 1000
-const AB_LO := 2150, AB_HI := 2350;      ' expected a->b spacing, ms (cross-check)
-const BC_LO := 14950, BC_HI := 15250;    ' expected b->c spacing, ms (cross-check)
+const AB_LO := 2150, AB_HI := 2350;      ' expected a->b spacing, ms
+const BC_LO := 14950, BC_HI := 15250;    ' expected b->c spacing, ms
 const TRIALS_PER_BLOCK% := 8;
 const BLOCKS_PER_SESSION% := 4;
 const TRIG_TITLE$ := "Trig";
@@ -45,8 +38,13 @@ const MAXPULSES% := 4000;         ' room for the markers of one file
 ' ---- main -------------------------------------------------------------------
 var folder$, files$[1000], nFiles%, i%, vh%, fh%;
 var nDone% := 0, nBad% := 0;
+' 1 = save and close each file when it is done (folder mode).
+' 0 = leave it open so you can look at the Labels channel straight away, and
+'     save it yourself with Ctrl+S. Used for one-file runs and bench tests.
+var gClose% := 1;
 
 if Query("Process one file only?  (No = every .smrx in a folder)") = 1 then
+    gClose% := 0;
     vh% := FileOpen("", 0, 0);              ' empty name -> Open dialog
     if vh% > 0 then
         ProcessFile(vh%);
@@ -83,16 +81,15 @@ halt;
 proc ProcessFile(vh%)
 var trig%, n%, k%, ch%, free%;
 var t[MAXPULSES%];                        ' marker times, ms
-var cd%[MAXPULSES%];                      ' marker codes (first code of each; -1 on an event channel)
-var kind%, method$;
+var kind%;
 var a[MAXPULSES%/3+1], b[MAXPULSES%/3+1], c[MAXPULSES%/3+1];
-var um[MAXPULSES%], umc%[MAXPULSES%];     ' unmatched a/b/c markers: time, code
-var nTrip%, nUm%, nOther%;
+var um[MAXPULSES%];                       ' unmatched marker times, ms
+var nTrip%, nUm%;
 var blk%[MAXPULSES%/3+1], trl%[MAXPULSES%/3+1];
 var assigned%;
 var base$, dir$, name$, pid$, hand$;
-var exportOK% := -999;
 var mc%, code%[4], lab$;
+var nshow%;                               ' gap printing
 
 View(vh%);
 ' VERIFY: FileName$(1)=drive, (2)=path, (3)=name without extension
@@ -104,35 +101,40 @@ ParseName(base$, pid$, hand$);
 trig% := FindChanByTitle%(TRIG_TITLE$);
 if trig% <= 0 then
     PrintLog("%s: no channel titled \"%s\" - skipped\n", name$, TRIG_TITLE$);
-    WriteReport(dir$ + base$ + "_labels_report.txt", name$, pid$, hand$, "", 0, 0, 0, 0, um[], umc%[], 0, a[], b[], c[], 0, "no Trig channel");
+    WriteReport(dir$ + base$ + "_labels_report.txt", name$, pid$, hand$, 0, 0, 0, um[], 0, a[], b[], c[], 0, "no Trig channel");
     FileClose(0, -1);
     return;
 endif;
 kind% := ChanKind(trig%);
 if kind% <> 5 and kind% <> 2 and kind% <> 3 then
     PrintLog("%s: channel \"%s\" is neither a marker nor an event channel (kind %d) - wrong configuration? skipped\n", name$, TRIG_TITLE$, kind%);
-    WriteReport(dir$ + base$ + "_labels_report.txt", name$, pid$, hand$, "", 0, 0, 0, 0, um[], umc%[], 0, a[], b[], c[], 0, "Trig is neither a marker nor an event channel");
+    WriteReport(dir$ + base$ + "_labels_report.txt", name$, pid$, hand$, 0, 0, 0, um[], 0, a[], b[], c[], 0, "Trig is neither a marker nor an event channel");
     FileClose(0, -1);
     return;
 endif;
 
-' 2. every marker's time (ms) and first code (-1 on an event channel)
-if kind% = 5 then
-    n% := ReadMarkers%(trig%, t[], cd%[]);
-else
-    n% := ChanData(trig%, t[], 0, MaxTime());
-    for k% := 0 to n%-1 do t[k%] := t[k%] * 1000.0; cd%[k%] := -1; next;
-endif;
+' 2. every marker's time, converted to ms. ChanData returns the times of a
+'    marker channel just as it does for an event channel.
+n% := ChanData(trig%, t[], 0, MaxTime());
+if n% >= MAXPULSES% then PrintLog("%s: more than %d markers; the rest were ignored\n", name$, MAXPULSES%) endif;
+for k% := 0 to n%-1 do t[k%] := t[k%] * 1000.0; next;
 
 ' 3. decode (line-by-line port of bbtk_trigger.decode / assign_positions)
-method$ := DecodeMethod$(cd%[], n%);
-if method$ = "codes" then
-    DecodeByCodes(t[], cd%[], n%, a[], b[], c[], nTrip%, um[], umc%[], nUm%, nOther%);
-else
-    DecodeBySpacing(t[], cd%[], n%, a[], b[], c[], nTrip%, um[], umc%[], nUm%);
-    nOther% := 0;
-endif;
+Decode(t[], n%, a[], b[], c[], nTrip%, um[], nUm%);
 assigned% := AssignPositions%(nTrip%, blk%[], trl%[]);
+
+' 3b. If nothing decoded, print the first few gaps next to the windows they had
+'     to fall inside. A timing mismatch is obvious from this and invisible
+'     without it.
+if nTrip% = 0 and n% > 1 then
+    nshow% := n% - 1;
+    if nshow% > 8 then nshow% := 8 endif;
+    PrintLog("%s: NO TRIPLETS. First %d gaps in ms:\n  ", name$, nshow%);
+    for k% := 1 to nshow% do
+        PrintLog("%.0f  ", t[k%] - t[k%-1]);
+    next;
+    PrintLog("\n  a->b has to land in %d-%d ms and b->c in %d-%d ms.\n", AB_LO, AB_HI, BC_LO, BC_HI);
+endif;
 
 ' 4. Labels channel: delete an old one so a re-run leaves exactly one
 ch% := FindChanByTitle%(LABEL_TITLE$);
@@ -145,90 +147,55 @@ if free% > 0 and nTrip% > 0 then
     mc% := MemChan(8, 16);                ' 8 = TextMark, 16 chars per item
     for k% := 0 to nTrip%-1 do
         code%[1] := blk%[k%]; code%[2] := trl%[k%]; code%[3] := 0;
-        code%[0] := CODE_A%; lab$ := LabelText$(blk%[k%], trl%[k%], "a");
+        code%[0] := 1; lab$ := LabelText$(blk%[k%], trl%[k%], "a");
         MemSetItem(mc%, 0, a[k%]/1000.0, code%[], lab$);       ' VERIFY argument order
-        code%[0] := CODE_B%; lab$ := LabelText$(blk%[k%], trl%[k%], "b");
+        code%[0] := 2; lab$ := LabelText$(blk%[k%], trl%[k%], "b");
         MemSetItem(mc%, 0, b[k%]/1000.0, code%[], lab$);
-        code%[0] := CODE_C%; lab$ := LabelText$(blk%[k%], trl%[k%], "c");
+        code%[0] := 3; lab$ := LabelText$(blk%[k%], trl%[k%], "c");
         MemSetItem(mc%, 0, c[k%]/1000.0, code%[], lab$);
     next;
     ChanTitle$(mc%, LABEL_TITLE$);
-    ChanComment$(mc%, "a/b/c per trial, from the Trig marker codes, by mo_label_export.s2s");
+    ChanComment$(mc%, "a/b/c per trial, from the Trig marker spacing, by mo_label_export.s2s");
     ' VERIFY: MemSave writes the memory channel into the file as channel free%
     if MemSave(mc%, free%) > 0 then
         ChanDelete(mc%, 0);
         ChanTitle$(free%, LABEL_TITLE$);
         ChanShow(free%);
+        ' Confirm it is really in the file, and say where to look for it.
+        if FindChanByTitle%(LABEL_TITLE$) > 0 then
+            PrintLog("%s: Labels written to CHANNEL %d, %d items. Right-click it and set Draw Mode to Text to read the labels.\n", name$, free%, nTrip% * 3);
+        else
+            PrintLog("%s: *** MemSave reported success but no channel titled \"%s\" can be found ***\n", name$, LABEL_TITLE$);
+        endif;
     else
-        PrintLog("%s: MemSave into channel %d failed\n", name$, free%);
+        PrintLog("%s: *** MemSave into channel %d FAILED - no Labels channel was written ***\n", name$, free%);
     endif;
 else
     PrintLog("%s: no Labels channel written (free channel %d, triplets %d)\n", name$, free%, nTrip%);
 endif;
 
-' 5. on a marker channel, make Trig itself carry the labels: code 0 = 1/2/3,
-'    code 1 = block, code 2 = trial. Unlabelled markers keep what they had.
-if kind% = 5 and nTrip% > 0 then
-    for k% := 0 to nTrip%-1 do
-        SetCodes(trig%, a[k%]/1000.0, CODE_A%, blk%[k%], trl%[k%]);
-        SetCodes(trig%, b[k%]/1000.0, CODE_B%, blk%[k%], trl%[k%]);
-        SetCodes(trig%, c[k%]/1000.0, CODE_C%, blk%[k%], trl%[k%]);
-    next;
+' 5. report
+WriteReport(dir$ + base$ + "_labels_report.txt", name$, pid$, hand$, n%, nTrip%, assigned%, um[], nUm%, a[], b[], c[], 1, "");
+PrintLog("%s: %d markers, %d triplets, %d unmatched, positions %s\n", name$, n%, nTrip%, nUm%, PosText$(assigned%, nTrip%));
+
+' 6. finish with the file
+if gClose% = 1 then
+    ' VERIFY: query% 1 = save changes without asking. If this turns out to
+    ' discard instead of save, the Labels channel is lost and the file looks
+    ' untouched when you reopen it.
+    FileClose(0, 1);
+else
+    PrintLog("%s: LEFT OPEN so you can look at it. Labels is channel %d. If it looks right, save with Ctrl+S.\n", name$, free%);
 endif;
-
-' 6. export to MATLAB
-exportOK% := ExportMat%(dir$ + base$ + ".mat", trig%, free%);
-
-' 7. report
-WriteReport(dir$ + base$ + "_labels_report.txt", name$, pid$, hand$, method$, n%, nOther%, nTrip%, assigned%, um[], umc%[], nUm%, a[], b[], c[], 1, Str$(exportOK%));
-PrintLog("%s: %d markers (%d ignored), method %s, %d triplets, %d unmatched, positions %s, export code %d\n", name$, n%, nOther%, method$, nTrip%, nUm%, PosText$(assigned%, nTrip%), exportOK%);
-
-' VERIFY: query% 1 = save changes without asking
-FileClose(0, 1);
-end;
-
-' ---- reading the marker channel -------------------------------------------------
-' Walks the channel with NextTime, which for a marker channel also returns the
-' four marker codes; the first code is the byte the 1401 latched. Times are
-' converted to ms. Returns the count.
-func ReadMarkers%(chan%, t[], cd%[])
-var n% := 0, tm, code%[4];
-' VERIFY: NextTime(chan%, sTime, code%[]) fills code%[] for marker channels
-tm := NextTime(chan%, -1, code%[]);
-while tm >= 0 and n% < MAXPULSES% do
-    t[n%] := tm * 1000.0;
-    cd%[n%] := code%[0];
-    n% += 1;
-    tm := NextTime(chan%, tm, code%[]);
-wend;
-if tm >= 0 then PrintLog("more than %d markers; the rest were ignored\n", MAXPULSES%) endif;
-return n%;
-end;
-
-' ---- rewriting marker codes ----------------------------------------------------
-' Sets the codes of the one marker at time tm (seconds) on a marker channel.
-' VERIFY: MarkSet(chan%, sTime, eTime, code0%, code1%, code2%, code3%) sets the
-' codes of every marker in the time range; the range is half a millisecond
-' wide so it covers exactly one marker.
-proc SetCodes(chan%, tm, letter%, blk%, trl%)
-MarkSet(chan%, tm - 0.00025, tm + 0.00025, letter%, blk%, trl%, 0);
 end;
 
 ' ---- decoder ------------------------------------------------------------------
-' "codes" if any marker carries 1, 2 or 3, else "spacing". Same rule as
-' bbtk_trigger.decode_method.
-func DecodeMethod$(cd%[], n%)
-var k%;
-for k% := 0 to n%-1 do
-    if cd%[k%] = CODE_A% or cd%[k%] = CODE_B% or cd%[k%] = CODE_C% then return "codes" endif;
-next;
-return "spacing";
-end;
-
-' Codes ignored: a marker followed by one within the a->b window and another
-' within the b->c window after that makes a trial. Port of
-' bbtk_trigger.decode_by_spacing. Same skip-one rule as DecodeByCodes.
-proc DecodeBySpacing(t[], cd%[], n%, a[], b[], c[], &nTrip%, um[], umc%[], &nUm%)
+' t[] sorted ascending (ChanData returns the channel in order). A marker
+' followed by one within the a->b window and another within the b->c window
+' after that makes a trial. Otherwise it is left unmatched on its own and the
+' search moves one along, so one stray or missing marker costs one trial.
+' Port of bbtk_trigger.decode.
+proc Decode(t[], n%, a[], b[], c[], &nTrip%, um[], &nUm%)
 var i% := 0;
 nTrip% := 0; nUm% := 0;
 while i% < n% do
@@ -238,49 +205,11 @@ while i% < n% do
         nTrip% += 1;
         i% += 3;
     else
-        um[nUm%] := t[i%]; umc%[nUm%] := cd%[i%];
+        um[nUm%] := t[i%];
         nUm% += 1;
         i% += 1;
     endif;
 wend;
-end;
-
-' t[]/cd%[] sorted ascending (NextTime walks the channel in order). Markers
-' whose code is not a, b or c are dropped first (counted in nOther%). Then each
-' marker either starts a valid triplet (a, b, c in a row) with the two that
-' follow, or is left unmatched on its own and the search moves one along.
-' Port of bbtk_trigger.decode_by_codes.
-proc DecodeByCodes(t[], cd%[], n%, a[], b[], c[], &nTrip%, um[], umc%[], &nUm%, &nOther%)
-var i% := 0, m% := 0, k%;
-var tt[MAXPULSES%], cc%[MAXPULSES%];
-nTrip% := 0; nUm% := 0; nOther% := 0;
-for k% := 0 to n%-1 do
-    if cd%[k%] = CODE_A% or cd%[k%] = CODE_B% or cd%[k%] = CODE_C% then
-        tt[m%] := t[k%]; cc%[m%] := cd%[k%]; m% += 1;
-    else
-        nOther% += 1;
-    endif;
-next;
-while i% < m% do
-    if (i%+2 < m%) and (cc%[i%] = CODE_A%) and (cc%[i%+1] = CODE_B%) and (cc%[i%+2] = CODE_C%) then
-        a[nTrip%] := tt[i%]; b[nTrip%] := tt[i%+1]; c[nTrip%] := tt[i%+2];
-        nTrip% += 1;
-        i% += 3;
-    else
-        um[nUm%] := tt[i%]; umc%[nUm%] := cc%[i%];
-        nUm% += 1;
-        i% += 1;
-    endif;
-wend;
-end;
-
-' 1 if a triplet's spacing is outside the expected windows (a cross-check;
-' the trial is still labelled).
-func TimingFault%(a, b, c)
-var ab := b - a, bc := c - b;
-if ab < AB_LO or ab > AB_HI then return 1 endif;
-if bc < BC_LO or bc > BC_HI then return 1 endif;
-return 0;
 end;
 
 ' Returns 1 when positions could be assigned, 0 when every block/trial is 0.
@@ -336,25 +265,9 @@ next;
 return 0;
 end;
 
-' Export FDI_L, FDI_R, Trig and Labels over the whole file. Returns the
-' FileSaveAs result (0 = success) or -998 if a channel was missing.
-func ExportMat%(matname$, trig%, labels%)
-var l%, r%, spec$, res%;
-l% := FindChanByTitle%("FDI_L");
-r% := FindChanByTitle%("FDI_R");
-if l% <= 0 or r% <= 0 or trig% <= 0 or labels% <= 0 then return -998 endif;
-spec$ := Str$(l%) + "," + Str$(r%) + "," + Str$(trig%) + "," + Str$(labels%);
-' VERIFY: ExportChanList(1) clears the list; (sTime, eTime, cSpc) adds channels
-ExportChanList(1);
-ExportChanList(0, MaxTime(), spec$);
-' VERIFY: FileSaveAs type 100 = MATLAB export using the export channel list
-res% := FileSaveAs(matname$, 100, 1);
-return res%;
-end;
-
 ' ---- report ------------------------------------------------------------------
-proc WriteReport(path$, name$, pid$, hand$, method$, nMark%, nOther%, nTrip%, assigned%, um[], umc%[], nUm%, a[], b[], c[], ok%, export$)
-var rh%, k%, d, nFault% := 0;
+proc WriteReport(path$, name$, pid$, hand$, nMark%, nTrip%, assigned%, um[], nUm%, a[], b[], c[], ok%, err$)
+var rh%, k%, d;
 var abMin, abMax, abSum, bcMin, bcMax, bcSum;
 ' VERIFY: FileOpen type 8 = external text file, mode 1 = write (new file)
 rh% := FileOpen(path$, 8, 1);
@@ -367,28 +280,18 @@ Print("Motor Overflow trigger label report\n");
 Print("file:            %s\n", name$);
 Print("pid / hand:      %s / %s\n", pid$, hand$);
 Print("generated:       %s %s\n", Date$(), Time$());
-Print("codes:           a=%d b=%d c=%d   (must match bbtk_trigger.py)\n", CODE_A%, CODE_B%, CODE_C%);
-Print("windows (ms):    a->b %d-%d   b->c %d-%d   (cross-check only)\n", AB_LO, AB_HI, BC_LO, BC_HI);
+Print("windows (ms):    a->b %d-%d   b->c %d-%d\n", AB_LO, AB_HI, BC_LO, BC_HI);
 if ok% = 0 then
-    Print("ERROR:           %s\n", export$);
+    Print("ERROR:           %s\n", err$);
     FileClose(0, -1);
     return;
 endif;
-Print("Trig markers:    %d  (%d with other codes, ignored)\n", nMark%, nOther%);
-if method$ = "codes" then
-    Print("method:          codes (markers carry 1/2/3)\n");
-else
-    Print("method:          spacing (no a/b/c codes on Trig; grouped by the 2.2 s / 15 s pattern)\n");
-endif;
+Print("Trig markers:    %d\n", nMark%);
 Print("triplets:        %d  (expected %d for a session, %d for one block)\n", nTrip%, TRIALS_PER_BLOCK% * BLOCKS_PER_SESSION%, TRIALS_PER_BLOCK%);
 Print("positions:       %s\n", PosText$(assigned%, nTrip%));
 Print("unmatched:       %d\n", nUm%);
 for k% := 0 to nUm%-1 do
-    if umc%[k%] >= 0 then
-        Print("  unmatched marker code %d at %.3f s\n", umc%[k%], um[k%] / 1000.0);
-    else
-        Print("  unmatched pulse at %.3f s\n", um[k%] / 1000.0);
-    endif;
+    Print("  unmatched marker at %.3f s\n", um[k%] / 1000.0);
 next;
 if nTrip% > 0 then
     abMin := 1e9; abMax := -1e9; abSum := 0;
@@ -402,21 +305,9 @@ if nTrip% > 0 then
         if d < bcMin then bcMin := d endif;
         if d > bcMax then bcMax := d endif;
         bcSum += d;
-        nFault% += TimingFault%(a[k%], b[k%], c[k%]);
     next;
     Print("a->b ms:         min %.1f  mean %.1f  max %.1f\n", abMin, abSum / nTrip%, abMax);
     Print("b->c ms:         min %.1f  mean %.1f  max %.1f\n", bcMin, bcSum / nTrip%, bcMax);
-    Print("timing:          %d triplet(s) outside the expected windows\n", nFault%);
-    for k% := 0 to nTrip%-1 do
-        if TimingFault%(a[k%], b[k%], c[k%]) then
-            Print("  triplet %d: a->b %.1f ms, b->c %.1f ms\n", k%+1, b[k%]-a[k%], c[k%]-b[k%]);
-        endif;
-    next;
-endif;
-if export$ = "0" then
-    Print("export:          .mat written\n");
-else
-    Print("export:          FAILED (code %s) - export by hand, see SETUP_INSTRUCTIONS.md Part F\n", export$);
 endif;
 FileClose(0, -1);
 end;

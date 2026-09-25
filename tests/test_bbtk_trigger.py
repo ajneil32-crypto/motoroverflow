@@ -1,5 +1,5 @@
 """Tests for bbtk_trigger: the Trigger class with a fake clock and fake serial
-port, the decoder against a simulated session, and the command-line decode.
+port, the spacing decoder against a simulated session, and the command-line decode.
 
 Run from the study folder:  py -m unittest discover -s tests -v
 """
@@ -17,8 +17,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import bbtk_trigger as bt
 
-A, B, C, TEST = bt.CODES["a"], bt.CODES["b"], bt.CODES["c"], bt.CODES["test"]
-IDLE = b"80"
+UP, DOWN = b"80", b"00"
 
 
 class FakeClock:
@@ -49,22 +48,6 @@ def payloads(ser):
     return [b for _, b in ser.writes]
 
 
-class TestCmd(unittest.TestCase):
-    def test_hex_pairs(self):
-        self.assertEqual(bt.cmd(0), b"00")
-        self.assertEqual(bt.cmd(1), b"01")
-        self.assertEqual(bt.cmd(0x80), b"80")
-        self.assertEqual(bt.cmd(0x81), b"81")
-        self.assertEqual(bt.cmd(0xFF), b"FF")
-        self.assertEqual(bt.CMD_IDLE, IDLE)
-
-    def test_codes_fit_seven_bits(self):
-        for code in bt.CODES.values():
-            self.assertTrue(0 < code <= bt.CODE_MAX, code)
-        self.assertEqual(len(set(bt.CODES.values())), len(bt.CODES))
-        self.assertEqual((A, B, C), (1, 2, 3))
-
-
 class TestOpen(unittest.TestCase):
     def test_open_resets_then_idles(self):
         trig, clock, made = make_trigger()
@@ -72,7 +55,7 @@ class TestOpen(unittest.TestCase):
         self.assertTrue(ok, msg)
         self.assertTrue(trig.enabled)
         self.assertEqual(trig.port, "COM9")
-        self.assertEqual(payloads(made[0]), [b"RR", b"##", IDLE])
+        self.assertEqual(payloads(made[0]), [b"RR", b"##", UP])
         self.assertTrue(trig.answered)
         self.assertIn("answered", msg)
         self.assertEqual(made[0].baudrate, 115200)
@@ -86,7 +69,7 @@ class TestOpen(unittest.TestCase):
         self.assertTrue(trig.enabled)
         self.assertFalse(trig.answered)
         self.assertIn("did not answer", msg)
-        self.assertEqual(payloads(made[0]), [b"RR", b"##", IDLE])
+        self.assertEqual(payloads(made[0]), [b"RR", b"##", UP])
         self.assertIsNotNone(trig.pulse("a"))
 
     def test_failed_open_gives_reason(self):
@@ -175,45 +158,21 @@ class TestOpen(unittest.TestCase):
 
 
 class TestPulse(unittest.TestCase):
-    def test_pulse_sets_data_then_drops_strobe(self):
-        # data first with the strobe HIGH, then the same data with it LOW
+    def test_pulse_puts_line_up_then_down(self):
         trig, clock, made = make_trigger()
         trig.open("COM9")
         clock.advance_ms(1234.56)
         t = trig.pulse("a")
         self.assertEqual(t, 1234.6)
-        self.assertEqual(payloads(made[0])[-2:], [b"81", b"01"])
+        self.assertEqual(payloads(made[0])[-2:], [UP, DOWN])
         self.assertEqual(trig.counts["a"], 1)
-        trig.pulse("b")
-        self.assertEqual(payloads(made[0])[-2:], [b"82", b"02"])
-        trig.pulse("c")
-        self.assertEqual(payloads(made[0])[-2:], [b"83", b"03"])
-
-    def test_explicit_code(self):
-        trig, clock, made = make_trigger()
-        trig.open("COM9")
-        self.assertIsNotNone(trig.pulse("block", 0x55))
-        self.assertEqual(payloads(made[0])[-2:], [b"D5", b"55"])
-        self.assertEqual(trig.counts["block"], 1)
-
-    def test_bad_label_or_code_raises_before_any_write(self):
-        trig, clock, made = make_trigger()
-        trig.open("COM9")
-        n = len(made[0].writes)
-        with self.assertRaises(ValueError):
-            trig.pulse("nonsense")
-        with self.assertRaises(ValueError):
-            trig.pulse("a", 128)
-        with self.assertRaises(ValueError):
-            trig.pulse("a", -1)
-        self.assertEqual(len(made[0].writes), n)
 
     def test_pulse_when_disabled(self):
         trig, clock, made = make_trigger()
         self.assertIsNone(trig.pulse("a"))
         self.assertEqual(made, [])
 
-    def test_service_holds_strobe_low_then_raises_it(self):
+    def test_service_holds_line_down_then_puts_it_up(self):
         trig, clock, made = make_trigger()
         trig.open("COM9")
         trig.pulse("a")
@@ -223,24 +182,23 @@ class TestPulse(unittest.TestCase):
         self.assertEqual(len(made[0].writes), n)
         clock.advance_ms(0.1)
         trig.service()
-        # strobe HIGH again, the code still on the data lines
-        self.assertEqual(payloads(made[0])[-1], b"81")
+        self.assertEqual(payloads(made[0])[-1], UP)
         n = len(made[0].writes)
         trig.service()
         trig.service()
         self.assertEqual(len(made[0].writes), n, "idle service must not write")
 
-    def test_pulse_while_strobe_low_raises_it_first(self):
+    def test_pulse_while_line_down_puts_it_up_first(self):
         trig, clock, made = make_trigger()
         trig.open("COM9")
         trig.pulse("a")
         clock.advance_ms(1)
         trig.pulse("b")
-        # 81 01 (a) then 82 (b's data, strobe back HIGH) 02 (fresh falling edge)
-        self.assertEqual(payloads(made[0])[-4:], [b"81", b"01", b"82", b"02"])
+        # a: up, down; b: up (line back up), down (a fresh fall)
+        self.assertEqual(payloads(made[0])[-4:], [UP, DOWN, UP, DOWN])
         clock.advance_ms(bt.PULSE_MIN_MS + 1)
         trig.service()
-        self.assertEqual(payloads(made[0])[-1], b"82")
+        self.assertEqual(payloads(made[0])[-1], UP)
 
     def test_write_failure_is_recorded_not_raised(self):
         # RR, ##, 80 on open, then one good marker (2 writes); the sixth write fails
@@ -260,30 +218,30 @@ class TestPulse(unittest.TestCase):
         trig.close()               # must not raise either
 
     def test_failure_between_the_two_writes(self):
-        # data goes out, the strobe write fails: nothing is counted
+        # the up write goes out, the down write fails: nothing is counted
         trig, clock, made = make_trigger(fail_after_writes=4)
         trig.open("COM9")
         self.assertIsNone(trig.pulse("a"))
         self.assertTrue(trig.failed)
         self.assertNotIn("a", trig.counts)
 
-    def test_close_idles_and_is_idempotent(self):
+    def test_close_puts_line_up_and_is_idempotent(self):
         trig, clock, made = make_trigger()
         trig.open("COM9")
         trig.pulse("a")
         trig.close()
-        self.assertEqual(payloads(made[0])[-1], IDLE)
+        self.assertEqual(payloads(made[0])[-1], UP)
         self.assertFalse(made[0].is_open)
         self.assertFalse(trig.enabled)
         trig.close()
         trig.close()
         self.assertIsNone(trig.pulse("a"))
 
-    def test_test_pulse_rate_limit_and_code(self):
+    def test_test_pulse_rate_limit(self):
         trig, clock, made = make_trigger()
         trig.open("COM9")
         self.assertTrue(trig.test_pulse())
-        self.assertEqual(payloads(made[0])[-2:], [bt.cmd(TEST | 0x80), bt.cmd(TEST)])
+        self.assertEqual(payloads(made[0])[-2:], [UP, DOWN])
         clock.advance_ms(999)
         self.assertFalse(trig.test_pulse())
         clock.advance_ms(1)
@@ -291,109 +249,72 @@ class TestPulse(unittest.TestCase):
         self.assertEqual(trig.n_test, 2)
         self.assertEqual(trig.counts["test"], 2)
 
-    def test_hold_keeps_strobe_high(self):
-        trig, clock, made = make_trigger()
-        trig.open("COM9")
-        self.assertTrue(trig.hold(True))
-        self.assertEqual(payloads(made[0])[-1], b"81")
-        self.assertTrue(trig.hold(True, all_lines=True))
-        self.assertEqual(payloads(made[0])[-1], b"FF")
-        n = len(made[0].writes)
-        clock.advance_ms(100)
-        trig.service()
-        self.assertEqual(len(made[0].writes), n, "service must leave a held line alone")
-        self.assertTrue(trig.hold(False))
-        self.assertEqual(payloads(made[0])[-1], IDLE)
-
-
 # --- decoder ------------------------------------------------------------------
 
 def simulate_session(seed, n_blocks=4, n_trials=8, ao_block=None):
-    """(time_ms, code) markers for a session with the jitter the real task
-    shows. Returns (marks, expected_triplets) where expected is a list of
-    (a, b, c) times."""
+    """Marker times (ms) for a session with the jitter the real task shows.
+    Returns (times, expected_triplets) where expected is a list of (a, b, c)
+    times."""
     rng = random.Random(seed)
     t = rng.uniform(5000, 20000)
-    marks, expected = [], []
+    times, expected = [], []
     for blk in range(n_blocks):
         for tr in range(n_trials):
             a = t
             b = a + bt.AB_NOMINAL_MS + rng.uniform(0, 34)
             late = rng.uniform(0, 150) if blk == ao_block else rng.uniform(0, 17)
             c = b + bt.BC_NOMINAL_MS + late
-            marks += [(a, A), (b, B), (c, C)]
+            times += [a, b, c]
             expected.append((a, b, c))
             t = c + rng.uniform(3000, 60000)
         t += rng.uniform(60000, 300000)
-    return marks, expected
+    return times, expected
 
 
 class TestDecoder(unittest.TestCase):
-    def check_positions(self, triplets, expected):
-        self.assertEqual(triplets, expected)
-        pos = bt.assign_positions(triplets)
-        for k, (blk, tr) in enumerate(pos):
-            self.assertEqual((blk, tr), (k // 8 + 1, k % 8 + 1))
-
     def test_clean_session(self):
         for seed in (1, 2, 3):
-            marks, expected = simulate_session(seed, ao_block=seed % 4)
-            self.assertEqual(len(marks), 96)
-            triplets, unmatched = bt.decode(marks)
+            times, expected = simulate_session(seed, ao_block=seed % 4)
+            self.assertEqual(len(times), 96)
+            triplets, unmatched = bt.decode(times)
+            self.assertEqual(triplets, expected)
             self.assertEqual(unmatched, [])
-            self.check_positions(triplets, expected)
-            self.assertEqual(bt.timing_faults(triplets), [])
+            pos = bt.assign_positions(triplets)
+            for k, (blk, tr) in enumerate(pos):
+                self.assertEqual((blk, tr), (k // 8 + 1, k % 8 + 1))
 
     def test_shuffled_input_is_sorted(self):
-        marks, expected = simulate_session(7)
-        rng = random.Random(0)
-        rng.shuffle(marks)
-        triplets, unmatched = bt.decode(marks)
+        times, expected = simulate_session(7)
+        random.Random(0).shuffle(times)
+        triplets, unmatched = bt.decode(times)
         self.assertEqual(triplets, expected)
 
-    def test_test_pulses_and_zero_codes_ignored(self):
-        marks, expected = simulate_session(4)
-        first = marks[0][0]
-        stray = [(first - 30000, TEST), (first - 29000, TEST), (first - 40000, 0)]
-        triplets, unmatched = bt.decode(stray + marks)
-        self.assertEqual(unmatched, [])
-        self.check_positions(triplets, expected)
+    def test_test_pulses_unmatched(self):
+        times, expected = simulate_session(4)
+        first = times[0]
+        stray = [first - 30000, first - 29000, first - 28000]
+        triplets, unmatched = bt.decode(stray + times)
+        self.assertEqual(triplets, expected)
+        self.assertEqual(unmatched, stray)
 
     def test_dropped_b(self):
-        marks, expected = simulate_session(5)
+        times, expected = simulate_session(5)
         k = 13
         a, b, c = expected[k]
-        marks.remove((b, B))
-        triplets, unmatched = bt.decode(marks)
+        times.remove(b)
+        triplets, unmatched = bt.decode(times)
         self.assertEqual(len(triplets), 31)
-        self.assertEqual(unmatched, [(a, A), (c, C)])
+        self.assertEqual(unmatched, [a, c])
         self.assertEqual(triplets, expected[:k] + expected[k + 1:])
         self.assertTrue(all(p == (0, 0) for p in bt.assign_positions(triplets)))
         self.assertFalse(bt.positions_assigned(triplets))
 
-    def test_stray_abc_marker_inside_trial(self):
-        # an extra "a" between b and c breaks that trial only
-        marks, expected = simulate_session(6)
-        k = 20
-        a, b, c = expected[k]
-        noise = (b + 5000, A)
-        triplets, unmatched = bt.decode(marks + [noise])
-        self.assertEqual(len(triplets), 31)
-        self.assertEqual(triplets, expected[:k] + expected[k + 1:])
-        self.assertEqual(unmatched, [(a, A), (b, B), noise, (c, C)])
-
-    def test_codes_decide_not_spacing(self):
-        # a, b, c with the wrong spacing is still a trial; it is flagged
-        marks = [(1000, A), (1000 + 3000, B), (1000 + 3000 + 20000, C)]
-        triplets, unmatched = bt.decode(marks)
-        self.assertEqual(len(triplets), 1)
-        self.assertEqual(unmatched, [])
-        self.assertEqual(bt.timing_faults(triplets), [(0, 3000, 20000)])
-        # and the right spacing with the wrong codes is not
-        marks = [(1000, A), (1000 + bt.AB_NOMINAL_MS, A), (1000 + bt.AB_NOMINAL_MS + bt.BC_NOMINAL_MS, C)]
-        triplets, unmatched = bt.decode(marks)
-        self.assertEqual(triplets, [])
-        self.assertEqual(len(unmatched), 3)
+    def test_stray_2200_before_a(self):
+        times, expected = simulate_session(8)
+        stray = expected[3][0] - bt.AB_NOMINAL_MS
+        triplets, unmatched = bt.decode(times + [stray])
+        self.assertEqual(unmatched, [stray])
+        self.assertEqual(triplets, expected)
 
     def test_window_edges(self):
         ab_lo, ab_hi = bt.AB_WINDOW_MS
@@ -401,13 +322,13 @@ class TestDecoder(unittest.TestCase):
         for ab, bc, ok in ((ab_lo, bc_lo, True), (ab_hi, bc_hi, True),
                            (ab_lo - 1, bc_lo, False), (ab_hi + 1, bc_hi, False),
                            (ab_lo, bc_lo - 1, False), (ab_hi, bc_hi + 1, False)):
-            triplets, unmatched = bt.decode([(1000, A), (1000 + ab, B), (1000 + ab + bc, C)])
-            self.assertEqual(len(triplets), 1, (ab, bc))
-            self.assertEqual(len(bt.timing_faults(triplets)), 0 if ok else 1, (ab, bc))
+            triplets, unmatched = bt.decode([1000, 1000 + ab, 1000 + ab + bc])
+            self.assertEqual(len(triplets), 1 if ok else 0, (ab, bc))
+            self.assertEqual(len(unmatched), 0 if ok else 3, (ab, bc))
 
     def test_single_block_file(self):
-        marks, expected = simulate_session(9, n_blocks=1)
-        triplets, unmatched = bt.decode(marks)
+        times, expected = simulate_session(9, n_blocks=1)
+        triplets, unmatched = bt.decode(times)
         self.assertEqual(triplets, expected)
         self.assertEqual(bt.assign_positions(triplets), [(0, k + 1) for k in range(8)])
         self.assertTrue(bt.positions_assigned(triplets))
@@ -415,84 +336,11 @@ class TestDecoder(unittest.TestCase):
     def test_empty(self):
         self.assertEqual(bt.decode([]), ([], []))
         self.assertEqual(bt.assign_positions([]), [])
-        self.assertEqual(bt.timing_faults([]), [])
-
-
-class TestSpacingFallback(unittest.TestCase):
-    """A straight DB25 cable delivers the strobe but no data bits: every
-    marker reads the same byte (AA). The decoder must then fall back to the
-    spacing rule and label exactly what the code rule would have."""
-
-    AA = 0xAA
-
-    def flat(self, marks, code=AA):
-        return [(t, code) for t, _ in marks]
-
-    def test_method_selection(self):
-        marks, _ = simulate_session(1)
-        self.assertEqual(bt.decode_method(marks), "codes")
-        self.assertEqual(bt.decode_method(self.flat(marks)), "spacing")
-        self.assertEqual(bt.decode_method([(1, 0), (2, 100)]), "spacing")
-        self.assertEqual(bt.decode_method([]), "spacing")
-
-    def test_flat_codes_label_the_same_trials(self):
-        for seed in (1, 2, 3):
-            marks, expected = simulate_session(seed, ao_block=seed % 4)
-            triplets, unmatched = bt.decode(self.flat(marks))
-            self.assertEqual(triplets, expected)
-            self.assertEqual(unmatched, [])
-            self.assertTrue(bt.positions_assigned(triplets))
-
-    def test_test_pulses_unmatched_by_spacing(self):
-        marks, expected = simulate_session(4)
-        first = marks[0][0]
-        stray = [(first - 30000, self.AA), (first - 29000, self.AA), (first - 28000, self.AA)]
-        triplets, unmatched = bt.decode(stray + self.flat(marks))
-        self.assertEqual(triplets, expected)
-        self.assertEqual(unmatched, stray)
-
-    def test_dropped_b_by_spacing(self):
-        marks, expected = simulate_session(5)
-        k = 13
-        a, b, c = expected[k]
-        flat = [m for m in self.flat(marks) if m[0] != b]
-        triplets, unmatched = bt.decode(flat)
-        self.assertEqual(len(triplets), 31)
-        self.assertEqual(unmatched, [(a, self.AA), (c, self.AA)])
-        self.assertFalse(bt.positions_assigned(triplets))
-
-    def test_stray_2200_before_a_by_spacing(self):
-        marks, expected = simulate_session(8)
-        a = expected[3][0]
-        stray = (a - bt.AB_NOMINAL_MS, self.AA)
-        triplets, unmatched = bt.decode(self.flat(marks) + [stray])
-        self.assertEqual(unmatched, [stray])
-        self.assertEqual(triplets, expected)
-
-    def test_spacing_window_edges(self):
-        ab_lo, ab_hi = bt.AB_WINDOW_MS
-        bc_lo, bc_hi = bt.BC_WINDOW_MS
-        for ab, bc, ok in ((ab_lo, bc_lo, True), (ab_hi, bc_hi, True),
-                           (ab_lo - 1, bc_lo, False), (ab_hi + 1, bc_hi, False),
-                           (ab_lo, bc_lo - 1, False), (ab_hi, bc_hi + 1, False)):
-            marks = [(1000, self.AA), (1000 + ab, self.AA), (1000 + ab + bc, self.AA)]
-            triplets, unmatched = bt.decode_by_spacing(marks)
-            self.assertEqual(len(triplets), 1 if ok else 0, (ab, bc))
-            self.assertEqual(len(unmatched), 0 if ok else 3, (ab, bc))
-
-    def test_report_names_the_method(self):
-        marks, _ = simulate_session(2)
-        text = "\n".join(bt.report(self.flat(marks)))
-        self.assertIn("method:      spacing", text)
-        self.assertIn("triplets:    32", text)
-        self.assertNotIn("ignored codes", text)
-        text = "\n".join(bt.report(marks))
-        self.assertIn("method:      codes", text)
 
 
 class TestCli(unittest.TestCase):
     def test_decode_task_csv(self):
-        marks, expected = simulate_session(11)
+        times, expected = simulate_session(11)
         tmp = tempfile.mkdtemp()
         path = os.path.join(tmp, "999_rh_mo_task.csv")
         with open(path, "w", newline="", encoding="utf-8") as f:
@@ -503,7 +351,7 @@ class TestCli(unittest.TestCase):
                 w.writerow(["999", "ME", k % 8 + 1, a, b, c, 1])
             # a skipped AO trial leaves the columns blank
             w.writerow(["999", "AO", 1, "", "", "", 0])
-        self.assertEqual(bt.load_marks(path), marks)
+        self.assertEqual(bt.load_marks(path), times)
         out = io.StringIO()
         with redirect_stdout(out):
             rc = bt.main(["decode", path])
@@ -511,7 +359,6 @@ class TestCli(unittest.TestCase):
         text = out.getvalue()
         self.assertIn("triplets:    32", text)
         self.assertIn("unmatched:   0", text)
-        self.assertIn("timing:      0 triplet(s)", text)
         self.assertIn("positions:   assigned", text)
         self.assertIn("1a 1b 1c", text)
         self.assertIn("4c", text)
@@ -520,15 +367,14 @@ class TestCli(unittest.TestCase):
         tmp = tempfile.mkdtemp()
         path = os.path.join(tmp, "marks.csv")
         with open(path, "w", encoding="utf-8") as f:
-            f.write("time_ms,code\n500,100\n1000,1\n3200,2\n18200,3\n50000,1\n")
-        self.assertEqual(bt.load_marks(path), [(500, 100), (1000, 1), (3200, 2), (18200, 3), (50000, 1)])
+            f.write("time_ms,code\n500,170\n1000,170\n3200,170\n18200,170\n50000,170\n")
+        self.assertEqual(bt.load_marks(path), [500, 1000, 3200, 18200, 50000])
         out = io.StringIO()
         with redirect_stdout(out):
             bt.main(["decode", path])
         text = out.getvalue()
         self.assertIn("triplets:    1", text)
-        self.assertIn("unmatched:   1", text)
-        self.assertIn("ignored codes: 100 x1", text)
+        self.assertIn("unmatched:   2", text)
         self.assertIn("UNASSIGNED", text)
 
 

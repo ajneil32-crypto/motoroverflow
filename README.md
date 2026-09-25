@@ -11,21 +11,19 @@ While the task runs, EMG is recorded on a separate PC with a CED Micro1401
 and Spike2. The two machines are kept in sync by digital markers driven by a
 Black Box Toolkit USB TTL module into the 1401's rear digital connector:
 three per trial (finger on the X, trial clock starts, closing bell), recorded
-on a Digital Marker channel. A Spike2 script then labels them `1a 1b 1c …`,
-by code when the cable delivers the codes and by their 2.2 s / 15 s spacing
-when it does not (the straight cable supplied with the BBTK: every marker
-reads `AA` until the script rewrites it).
+on a Digital Marker channel. The straight cable supplied with the BBTK
+carries only the strobe, so every marker reads `AA`; a Spike2 script then
+labels them `1a 1b 1c …` by their 2.2 s / 15 s spacing.
 
 ## What's in here
 
 | File | What it is |
 | --- | --- |
 | `motor_overflow9.py` | The full study: sign-in, handedness, reach calibration, the four blocks, MAAS and NASA-TLX questionnaires. This is the one you run. |
-| `bbtk_trigger.py` | The trigger link to the BBTK module. Also decodes recorded marker times and codes back into trials (`py bbtk_trigger.py decode <file>`). |
+| `bbtk_trigger.py` | The trigger link to the BBTK module. Also decodes recorded marker times back into trials (`py bbtk_trigger.py decode <file>`). |
 | `trigger_test.py` | Bench tool for checking the cable and Spike2 without running the task. |
-| `bbtk_loopback.py` | Quick check that the module is alive and talking. |
 | `spike2/` | Spike2 sampling configuration and the script that labels the markers after a session. |
-| `tests/` | 49 unit tests. Run with `py -m unittest discover -s tests -v`. No hardware needed. |
+| `tests/` | 43 unit tests. Run with `py -m unittest discover -s tests -v`. No hardware needed. |
 | `CHEAT_SHEET.md` | Copy-paste cheat sheet for the lab machine. |
 | `SETUP_INSTRUCTIONS.md` | Cabling and setup walk-through. |
 | `nimbl_logo.png`, `bell.wav` | The logo on the welcome screen and the trial bell. Both optional: the task runs without them. |
@@ -55,11 +53,9 @@ which live on each lab machine.
 
 ## Wiring, in short
 
-The straight DB25 cable supplied with the BBTK into the Micro1401's rear
-digital connector works as is (markers arrive as `AA`, labelled by the
-script). For codes on the wire a mapped cable is needed: BBTK lines 1–7 (pins
-2–8) to 1401 pins 21, 8, 20, 7, 19, 6, 18, line 8 (pin 9) to pin 23, pin 25
-to pin 13, pin 5 tied to 13.
+The straight DB25 cable supplied with the BBTK goes into the Micro1401's
+rear Digital Inputs connector. Only the strobe (BBTK line 8) reaches the
+1401, so markers arrive as `AA` and the script labels them by spacing.
 In Spike2, Trig is a Digital Marker channel (channel 32). Set the COM port's
 latency timer to 1 ms in Device Manager or the markers arrive late.
 `SETUP_INSTRUCTIONS.md` has the pin table and the step-by-step checks.
